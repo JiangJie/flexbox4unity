@@ -23,11 +23,11 @@ namespace Flexbox
             if (transform != null && transform.parent != null && transform.parent.TryGetComponent(out container))
             {
                 // 根据主轴方向，不修改交叉轴的值
-                if (container.FlexDirection == FlexDirection.Row)
+                if (container.FlexDirection == FlexDirection.Row || container.FlexDirection == FlexDirection.RowReverse)
                 {
                     return new Vector2(initValue[0], -1);
                 }
-                else if (container.FlexDirection == FlexDirection.Column)
+                else if (container.FlexDirection == FlexDirection.Column || container.FlexDirection == FlexDirection.ColumnReverse)
                 {
                     return new Vector2(-1, initValue[1]);
                 }

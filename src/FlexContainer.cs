@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Sirenix.Utilities;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -11,15 +10,15 @@ namespace Flexbox
     public enum Axis
     {
         x = 0,
-        y = 1
+        y = 1,
     }
 
     public enum FlexDirection
     {
         Row = 0,
-        // RowReverse, // todo
+        RowReverse,
         Column,
-        // ColumnReverse // todo
+        ColumnReverse,
     }
 
     public enum FlexWrap
@@ -36,7 +35,7 @@ namespace Flexbox
         Center,
         SpaceBetween,
         SpaceAround,
-        SpaceEvenly
+        SpaceEvenly,
     }
 
     public enum AlignItems
@@ -57,7 +56,7 @@ namespace Flexbox
         SpaceBetween,
         SpaceAround,
         SpaceEvenly,
-        Stretch
+        Stretch,
     }
 
     [RequireComponent(typeof(RectTransform))]
@@ -88,7 +87,7 @@ namespace Flexbox
         private bool m_isDirty;
 
         // 布局有关的三个组件
-        private readonly IList<(RectTransform rect, FlexItem flex, ILayoutElement layout)> m_Items = new List<(RectTransform, FlexItem, ILayoutElement)>();
+        private readonly List<(RectTransform rect, FlexItem flex, ILayoutElement layout)> m_Items = new List<(RectTransform, FlexItem, ILayoutElement)>();
 
         [NonSerialized] private RectTransform m_Rect;
         private RectTransform ContainerRect
@@ -135,6 +134,12 @@ namespace Flexbox
 
             // items按order升序排列
             m_Items.Sort((a, b) => a.flex.Order - b.flex.Order);
+
+            // 反转
+            if (m_FlexDirection == FlexDirection.RowReverse || m_FlexDirection == FlexDirection.ColumnReverse)
+            {
+                m_Items.Reverse();
+            }
         }
 
         private float GetActualSizeByAxis(int index, int axis, float size)
@@ -184,7 +189,7 @@ namespace Flexbox
             #region axis
 
             // 主轴是x还是y
-            var mainAxis = (int)(m_FlexDirection == FlexDirection.Row ? Axis.x : Axis.y);
+            var mainAxis = (int)(m_FlexDirection == FlexDirection.Row || m_FlexDirection == FlexDirection.RowReverse ? Axis.x : Axis.y);
             var crossAxis = 1 - mainAxis;
 
             // 主轴是否x轴

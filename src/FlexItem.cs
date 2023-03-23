@@ -76,7 +76,7 @@ namespace Flexbox
             get => m_Order;
         }
 
-        private void TryMakeContainerRebuld()
+        private void TryMakeContainerRebuild()
         {
             if (transform.parent != null && transform.parent.TryGetComponent<FlexContainer>(out var container))
             {
@@ -94,13 +94,13 @@ namespace Flexbox
         protected override void OnEnable()
         {
             base.OnEnable();
-            TryMakeContainerRebuld();
+            TryMakeContainerRebuild();
         }
 
         protected override void OnDisable()
         {
             m_Tracker.Clear();
-            TryMakeContainerRebuld();
+            TryMakeContainerRebuild();
 
             base.OnDisable();
         }
@@ -108,20 +108,20 @@ namespace Flexbox
         protected override void OnDidApplyAnimationProperties()
         {
             base.OnDidApplyAnimationProperties();
-            TryMakeContainerRebuld();
+            TryMakeContainerRebuild();
         }
 
         protected override void OnRectTransformDimensionsChange()
         {
             base.OnRectTransformDimensionsChange();
-            TryMakeContainerRebuld();
+            TryMakeContainerRebuild();
         }
 
 #if UNITY_EDITOR
         protected override void OnValidate()
         {
             base.OnValidate();
-            TryMakeContainerRebuld();
+            TryMakeContainerRebuild();
         }
 #endif
     }

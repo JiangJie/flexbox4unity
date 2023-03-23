@@ -16,7 +16,7 @@ namespace Flexbox
 
             if (GUILayout.Button("更新布局"))
             {
-                flexContainer.SetDirty();
+                flexContainer.ForceDoLayout();
             }
         }
     }

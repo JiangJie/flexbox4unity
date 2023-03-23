@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace Flexbox
 {
@@ -15,12 +16,8 @@ namespace Flexbox
 
     [RequireComponent(typeof(RectTransform))]
     [ExecuteAlways]
-    public sealed class FlexItem : MonoBehaviour
+    public sealed class FlexItem : UIBehaviour
     {
-        // todo
-        // [Tooltip("同级FlexItem的顺序，越小越靠前")]
-        // [SerializeField] private int m_Order;
-
         [Tooltip("扩展比例，大于0表示可扩展")]
         [SerializeField] private float m_FlexGrow;
 
@@ -38,6 +35,11 @@ namespace Flexbox
 
         [Tooltip("允许该FlexItem覆盖FlexContainer的AlignItems属性")]
         [SerializeField] private AlignSelf m_AlignSelf;
+
+        [Tooltip("同级FlexItem的顺序，越小越靠前")]
+        [SerializeField] private int m_Order;
+
+        private DrivenRectTransformTracker m_Tracker;
 
         public float FlexGrow
         {
@@ -69,27 +71,56 @@ namespace Flexbox
             get => m_AlignSelf;
         }
 
+        public int Order
+        {
+            get => m_Order;
+        }
+
         private void TryMakeContainerRebuld()
         {
-            if (transform.parent.TryGetComponent<FlexContainer>(out var container))
+            if (transform.parent != null && transform.parent.TryGetComponent<FlexContainer>(out var container))
             {
+                m_Tracker.Clear();
+                // 锁定position、Anchors和Size
+                m_Tracker.Add(this, transform as RectTransform,
+                    DrivenTransformProperties.Anchors |
+                    DrivenTransformProperties.SizeDelta |
+                    DrivenTransformProperties.AnchoredPosition);
+
                 container.SetDirty();
             }
         }
 
-        private void OnEnable()
+        protected override void OnEnable()
         {
+            base.OnEnable();
             TryMakeContainerRebuld();
         }
 
-        private void OnDisable()
+        protected override void OnDisable()
         {
+            m_Tracker.Clear();
+            TryMakeContainerRebuld();
+
+            base.OnDisable();
+        }
+
+        protected override void OnDidApplyAnimationProperties()
+        {
+            base.OnDidApplyAnimationProperties();
+            TryMakeContainerRebuld();
+        }
+
+        protected override void OnRectTransformDimensionsChange()
+        {
+            base.OnRectTransformDimensionsChange();
             TryMakeContainerRebuld();
         }
 
 #if UNITY_EDITOR
-        private void OnValidate()
+        protected override void OnValidate()
         {
+            base.OnValidate();
             TryMakeContainerRebuld();
         }
 #endif

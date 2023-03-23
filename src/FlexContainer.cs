@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Sirenix.Utilities;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -61,7 +62,7 @@ namespace Flexbox
 
     [RequireComponent(typeof(RectTransform))]
     [ExecuteAlways]
-    public sealed class FlexContainer : UIBehaviour
+    public sealed class FlexContainer : UIBehaviour, ICanvasElement
     {
         [Tooltip("主轴方向（从左往右/从上往下）")]
         [SerializeField] private FlexDirection m_FlexDirection;
@@ -83,9 +84,11 @@ namespace Flexbox
         [Tooltip("间距")]
         [SerializeField] private Vector2 m_Gap;
 
-        private readonly List<RectTransform> m_RectItems = new List<RectTransform>();
-        private readonly List<ILayoutElement> m_LayoutItems = new List<ILayoutElement>();
-        private readonly List<FlexItem> m_FlexItems = new List<FlexItem>();
+        // 是否需要更新，跟随canvas更新策略
+        private bool m_isDirty;
+
+        // 布局有关的三个组件
+        private readonly IList<(RectTransform rect, FlexItem flex, ILayoutElement layout)> m_Items = new List<(RectTransform, FlexItem, ILayoutElement)>();
 
         [NonSerialized] private RectTransform m_Rect;
         private RectTransform ContainerRect
@@ -99,15 +102,17 @@ namespace Flexbox
                 return m_Rect;
             }
         }
+#if UNITY_EDITOR
+        public FlexDirection FlexDirection => m_FlexDirection;
+#endif
 
         private void CreateChildrenItems()
         {
-            m_RectItems.Clear();
-            m_LayoutItems.Clear();
-            m_FlexItems.Clear();
+            m_Items.Clear();
 
             for (var i = 0; i < ContainerRect.childCount; i++)
             {
+                // 隐藏的不参与布局
                 if (!(ContainerRect.GetChild(i) is RectTransform childRect) || !childRect.gameObject.activeSelf)
                 {
                     continue;
@@ -122,21 +127,19 @@ namespace Flexbox
                 }
 
                 // 左上角
-                childRect.anchorMin = new Vector2(0, 1);
-                childRect.anchorMax = new Vector2(0, 1);
+                childRect.anchorMin = Vector2.up;
+                childRect.anchorMax = Vector2.up;
 
-                // rect
-                m_RectItems.Add(childRect);
-                // flex
-                m_FlexItems.Add(flex);
-                // layout
-                m_LayoutItems.Add(childRect.GetComponent<ILayoutElement>());
+                m_Items.Add((childRect, flex, childRect.GetComponent<ILayoutElement>()));
             }
+
+            // items按order升序排列
+            m_Items.Sort((a, b) => a.flex.Order - b.flex.Order);
         }
 
         private float GetActualSizeByAxis(int index, int axis, float size)
         {
-            var flex = m_FlexItems[index];
+            var flex = m_Items[index].flex;
             var minSize = flex.MinSize[axis];
             var maxSize = flex.MaxSize[axis];
 
@@ -173,7 +176,7 @@ namespace Flexbox
         {
             CreateChildrenItems();
 
-            if (m_FlexItems.Count == 0)
+            if (m_Items.Count == 0)
             {
                 return;
             }
@@ -199,7 +202,7 @@ namespace Flexbox
 
             // 空白间距是固定的
             // 0-width/height
-            var gapMainSize = Mathf.Clamp(m_Gap[mainAxis] * (m_FlexItems.Count - 1), 0f, ContainerRect.rect.size[mainAxis]);
+            var gapMainSize = Mathf.Clamp(m_Gap[mainAxis] * (m_Items.Count - 1), 0f, ContainerRect.rect.size[mainAxis]);
 
             // 主轴上各个item的尺寸
             var itemMainSizeList = new List<float>();
@@ -212,17 +215,18 @@ namespace Flexbox
             float getRestSpace() => ContainerRect.rect.size[mainAxis] - gapMainSize - itemMainSizeList.Sum();
             // 总的扩展
             // 支持不扩展完剩余空间
-            float getTotalGrow() => Math.Max(growableItemIndexList.Sum(i => m_FlexItems[i].FlexGrow), 1f);
+            float getTotalGrow() => Math.Max(growableItemIndexList.Sum(i => m_Items[i].flex.FlexGrow), 1f);
             // 总的收缩
             // 支持收缩不足完整所需要的空间
-            float getTotalShrink() => Math.Min(shrinkableItemIndexList.Sum(i => m_FlexItems[i].FlexShrink), 1f);
+            float getTotalShrink() => Math.Min(shrinkableItemIndexList.Sum(i => m_Items[i].flex.FlexShrink), 1f);
             // 收缩算法分母值
-            float getTotalShrinkSize() => shrinkableItemIndexList.Aggregate(0f, (ret, index) => ret + (itemMainSizeList[index] * m_FlexItems[index].FlexShrink));
+            float getTotalShrinkSize() => shrinkableItemIndexList.Aggregate(0f, (ret, index) => ret + (itemMainSizeList[index] * m_Items[index].flex.FlexShrink));
 
-            for (var index = 0; index < m_FlexItems.Count; index++)
+            for (var index = 0; index < m_Items.Count; index++)
             {
-                var flex = m_FlexItems[index];
-                var layout = m_LayoutItems[index];
+                var item = m_Items[index];
+                var flex = item.flex;
+                var layout = item.layout;
 
                 var basicMainSize = flex.FlexBasis[mainAxis];
                 // 结合LayoutElement，基础宽度可变
@@ -259,7 +263,7 @@ namespace Flexbox
 
                     foreach (var index in growableItemIndexList)
                     {
-                        var flex = m_FlexItems[index];
+                        var flex = m_Items[index].flex;
                         var maxMainSize = flex.MaxSize[mainAxis];
 
                         var mainSize = itemMainSizeList[index];
@@ -312,7 +316,7 @@ namespace Flexbox
 
                     foreach (var index in shrinkableItemIndexList)
                     {
-                        var flex = m_FlexItems[index];
+                        var flex = m_Items[index].flex;
                         var minMainSize = flex.MinSize[mainAxis];
 
                         var mainSize = itemMainSizeList[index];
@@ -357,8 +361,9 @@ namespace Flexbox
 
             for (var index = 0; index < itemMainSizeList.Count; index++)
             {
-                var rect = m_RectItems[index];
-                var basicCrossSize = m_FlexItems[index].FlexBasis[crossAxis];
+                var item = m_Items[index];
+                var rect = item.rect;
+                var basicCrossSize = item.flex.FlexBasis[crossAxis];
                 var crossSize = basicCrossSize >= 0 ? basicCrossSize : rect.rect.size[crossAxis];
 
                 rect.sizeDelta = createVector2AccordingMainAxis(itemMainSizeList[index], GetActualSizeByAxis(index, crossAxis, crossSize));
@@ -388,26 +393,27 @@ namespace Flexbox
             // 两边顶到头，剩余空间平分
             else if (m_JustifyContent == JustifyContent.SpaceBetween)
             {
-                spacing += getRestSpace() / Math.Max(m_RectItems.Count - 1, 1);
+                spacing += getRestSpace() / Math.Max(m_Items.Count - 1, 1);
             }
             // 两边间距为中间一半
             else if (m_JustifyContent == JustifyContent.SpaceAround)
             {
-                var halfSpacing = getRestSpace() / ((Math.Max(m_RectItems.Count - 1, 0) * 2) + 2);
+                var halfSpacing = getRestSpace() / ((Math.Max(m_Items.Count - 1, 0) * 2) + 2);
                 totalMainDelta = halfSpacing;
                 spacing += halfSpacing * 2;
             }
             // 两边跟中间一样间距
             else if (m_JustifyContent == JustifyContent.SpaceEvenly)
             {
-                var innerSpacing = getRestSpace() / (m_RectItems.Count + 1);
+                var innerSpacing = getRestSpace() / (m_Items.Count + 1);
                 totalMainDelta = innerSpacing;
                 spacing += innerSpacing;
             }
 
             var prevMainDelta = totalMainDelta;
-            foreach (var rect in m_RectItems)
+            foreach (var item in m_Items)
             {
+                var rect = item.rect;
                 rect.anchoredPosition = createVector2AccordingMainAxis((prevMainDelta + (rect.rect.size[mainAxis] / 2)) * mainPositionScale, rect.anchoredPosition[crossAxis]);
                 prevMainDelta += rect.rect.size[mainAxis] + spacing;
             }
@@ -416,10 +422,11 @@ namespace Flexbox
 
             #region AlignItems 交叉轴布局方式
 
-            for (var index = 0; index < m_RectItems.Count; index++)
+            for (var index = 0; index < m_Items.Count; index++)
             {
-                var rect = m_RectItems[index];
-                var flex = m_FlexItems[index];
+                var item = m_Items[index];
+                var rect = item.rect;
+                var flex = item.flex;
 
                 // 顶部对齐
                 if (flex.AlignSelf == AlignSelf.FlexStart || (flex.AlignSelf == AlignSelf.Auto && m_AlignItems == AlignItems.FlexStart))
@@ -450,18 +457,35 @@ namespace Flexbox
             #endregion
         }
 
+#if UNITY_EDITOR
+        public void ForceDoLayout()
+        {
+            DoLayout();
+        }
+#endif
+
         public void SetDirty()
         {
-            if (IsActive())
+            if (!IsActive())
             {
-                DoLayout();
+                return;
             }
+
+            CanvasUpdateRegistry.TryRegisterCanvasElementForLayoutRebuild(this);
+            m_isDirty = true;
         }
 
         protected override void OnEnable()
         {
             base.OnEnable();
             SetDirty();
+        }
+
+        protected override void OnDisable()
+        {
+            base.OnDisable();
+            CanvasUpdateRegistry.UnRegisterCanvasElementForLayoutRebuild(this);
+            m_isDirty = false;
         }
 
         protected override void OnDidApplyAnimationProperties()
@@ -483,5 +507,28 @@ namespace Flexbox
             SetDirty();
         }
 #endif
+
+        public void Rebuild(CanvasUpdate executing)
+        {
+            switch (executing)
+            {
+                // 等ContentSizeFilter等组件计算完毕
+                case CanvasUpdate.PostLayout:
+                    if (m_isDirty)
+                    {
+                        DoLayout();
+                    }
+                    break;
+            }
+        }
+
+        public void LayoutComplete()
+        {
+            m_isDirty = false;
+        }
+
+        public void GraphicUpdateComplete()
+        {
+        }
     }
 }

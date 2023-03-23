@@ -120,28 +120,21 @@ Container:
     * [x] flex-end
     * [x] stretch
 * align-content
-    * [x] normal
-    * [ ] flex-start
-    * [ ] flexend
-    * [ ] center
-    * [ ] space-between
-    * [ ] space-around
-    * [ ] space-evenly
+    * [ ] normal
+    * [x] flex-start
+    * [x] flexend
+    * [x] center
+    * [x] space-between
+    * [x] space-around
+    * [x] space-evenly
     * [ ] stretch
 * [x] gap
 
 Item:
-* [ ] order
+* [x] order
 * [x] flex-basis
 * [x] flex-grow
 * [x] flex-shrink
 * [x] min-size
 * [x] max-size
 * [x] align-self
-
-TODO list:
-* 避免`DoLayout`无效的调用
-* 修改`Container`或者`Item`跟`transform`相关的属性，自动重新计算布局
-* 嵌套布局有任何改动，自动自顶向下重新计算布局
-* 创建`FlexboxLayoutRebulder`进一步优化，减少计算
-* 优化编辑器所见即所得编辑体验

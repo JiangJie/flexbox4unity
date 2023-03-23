@@ -103,12 +103,13 @@ UI Toolkit编辑界面一览
 Container:
 * flex-direction
     * [x] row
-    * [ ] row-reverse
+    * [x] row-reverse
     * [x] column
-    * [ ] column-reverse
+    * [x] column-reverse
 * flex-wrap
     * [x] no-wrap
     * [ ] wrap
+    * [ ] wrap-reverse
 * justify-content
     * [x] flex-start
     * [x] flex-end
@@ -121,6 +122,7 @@ Container:
     * [x] flex-start
     * [x] flex-end
     * [x] stretch
+    * [ ] baseline
 * align-content
     * [ ] normal
     * [x] flex-start

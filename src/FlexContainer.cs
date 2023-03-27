@@ -262,7 +262,7 @@ namespace Flexbox
                 {
                     var totalFlexGrow = getTotalGrow();
                     // 本轮循环已经固定尺寸的item集合
-                    var flxedItemIndexList = new List<int>();
+                    var fixedItemIndexList = new List<int>();
                     // 是否产生了多余的剩余空间
                     var hasMoreSpace = false;
 
@@ -279,7 +279,7 @@ namespace Flexbox
                             if (mainSize >= maxMainSize)
                             {
                                 // size不可能再改变
-                                flxedItemIndexList.Add(index);
+                                fixedItemIndexList.Add(index);
                             }
                             if (mainSize > maxMainSize)
                             {
@@ -296,7 +296,7 @@ namespace Flexbox
                     if (hasMoreSpace)
                     {
                         // 排除掉已经固定的
-                        growableItemIndexList = growableItemIndexList.Except(flxedItemIndexList).ToList();
+                        growableItemIndexList = growableItemIndexList.Except(fixedItemIndexList).ToList();
                         // 重新计算
                         restSpace = getRestSpace();
                     }
@@ -315,7 +315,7 @@ namespace Flexbox
                     var totalShrink = getTotalShrink();
                     var totalShrinkSize = getTotalShrinkSize();
                     // 本轮循环已经固定尺寸的item集合
-                    var flxedItemIndexList = new List<int>();
+                    var fixedItemIndexList = new List<int>();
                     // 是否需要压缩更多空间
                     var needMoreSpace = false;
 
@@ -335,7 +335,7 @@ namespace Flexbox
                             if (mainSize <= minMainSize)
                             {
                                 // size不可能再改变
-                                flxedItemIndexList.Add(index);
+                                fixedItemIndexList.Add(index);
                             }
                             if (mainSize < minMainSize)
                             {
@@ -352,7 +352,7 @@ namespace Flexbox
                     if (needMoreSpace)
                     {
                         // 排除掉已经固定的
-                        shrinkableItemIndexList = shrinkableItemIndexList.Except(flxedItemIndexList).ToList();
+                        shrinkableItemIndexList = shrinkableItemIndexList.Except(fixedItemIndexList).ToList();
                         // 重新计算
                         restSpace = getRestSpace();
                     }

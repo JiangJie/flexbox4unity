@@ -133,6 +133,8 @@ Container:
     * [x] space-evenly
     * [ ] stretch
 * [x] gap
+* [x] auto-width
+* [x] auto-height
 
 Item:
 * [x] order

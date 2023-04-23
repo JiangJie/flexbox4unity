@@ -16,8 +16,8 @@ namespace Flexbox
     public enum FlexDirection
     {
         Row = 0,
-        RowReverse,
         Column,
+        RowReverse,
         ColumnReverse,
     }
 
@@ -61,7 +61,7 @@ namespace Flexbox
 
     [RequireComponent(typeof(RectTransform))]
     [ExecuteAlways]
-    public sealed class FlexContainer : UIBehaviour, ICanvasElement
+    public sealed class FlexContainer : UIBehaviour, ICanvasElement, ILayoutElement
     {
         [Tooltip("主轴方向（从左往右/从上往下）")]
         [SerializeField] private FlexDirection m_FlexDirection;
@@ -83,11 +83,19 @@ namespace Flexbox
         [Tooltip("间距")]
         [SerializeField] private Vector2 m_Gap;
 
+        [Tooltip("自动宽度")]
+        [SerializeField] private bool m_AutoWidth;
+
+        [Tooltip("自动高度")]
+        [SerializeField] private bool m_AutoHeight;
+
+        private DrivenRectTransformTracker m_Tracker;
+
         // 是否需要更新，跟随canvas更新策略
         private bool m_isDirty;
 
-        // 布局有关的三个组件
-        private readonly List<(RectTransform rect, FlexItem flex, ILayoutElement layout)> m_Items = new List<(RectTransform, FlexItem, ILayoutElement)>();
+        // 布局有关的组件
+        private readonly List<(RectTransform rect, FlexItem flex)> m_Items = new List<(RectTransform, FlexItem)>();
 
         [NonSerialized] private RectTransform m_Rect;
         private RectTransform ContainerRect
@@ -101,9 +109,44 @@ namespace Flexbox
                 return m_Rect;
             }
         }
+
 #if UNITY_EDITOR
         public FlexDirection FlexDirection => m_FlexDirection;
 #endif
+
+        public float minWidth => 0;
+
+        public float preferredWidth
+        {
+            get
+            {
+                if (m_AutoWidth)
+                {
+                    DoLayout();
+                }
+                return ContainerRect.rect.size[0];
+            }
+        }
+
+        public float flexibleWidth => 0;
+
+        public float minHeight => 0;
+
+        public float preferredHeight
+        {
+            get
+            {
+                if (m_AutoHeight)
+                {
+                    DoLayout();
+                }
+                return ContainerRect.rect.size[1];
+            }
+        }
+
+        public float flexibleHeight => 0;
+
+        public int layoutPriority => 0;
 
         private void CreateChildrenItems()
         {
@@ -129,7 +172,7 @@ namespace Flexbox
                 childRect.anchorMin = Vector2.up;
                 childRect.anchorMax = Vector2.up;
 
-                m_Items.Add((childRect, flex, childRect.GetComponent<ILayoutElement>()));
+                m_Items.Add((childRect, flex));
             }
 
             // items按order升序排列
@@ -206,11 +249,12 @@ namespace Flexbox
             #region init
 
             // 空白间距是固定的
-            // 0-width/height
-            var gapMainSize = Mathf.Clamp(m_Gap[mainAxis] * (m_Items.Count - 1), 0f, ContainerRect.rect.size[mainAxis]);
+            var gapMainSize = m_Gap[mainAxis] * (m_Items.Count - 1);
 
             // 主轴上各个item的尺寸
             var itemMainSizeList = new List<float>();
+            // 交叉轴上各个item的尺寸
+            var itemCrossSizeList = new List<float>();
             // 当前可扩展的item索引
             var growableItemIndexList = new List<int>();
             // 当前可收缩的item索引
@@ -231,14 +275,29 @@ namespace Flexbox
             {
                 var item = m_Items[index];
                 var flex = item.flex;
-                var layout = item.layout;
+                var rect = item.rect;
 
+                // 先计算交叉轴，TMP这种交叉轴大小会影响主轴大小
+                var basicCrossSize = flex.FlexBasis[crossAxis];
+                // 交叉轴就用初始大小
+                var crossSize = basicCrossSize >= 0 ? basicCrossSize : LayoutUtility.GetPreferredSize(rect, crossAxis);
+                // Stretch优先级更高
+                if (flex.AlignSelf == AlignSelf.Stretch || (flex.AlignSelf == AlignSelf.Auto && m_AlignItems == AlignItems.Stretch))
+                {
+                    crossSize = ContainerRect.rect.size[crossAxis];
+                }
+                crossSize = GetActualSizeByAxis(index, crossAxis, crossSize);
+                // 这里就要先设置交叉轴尺寸
+                rect.sizeDelta = createVector2AccordingMainAxis(rect.rect.size[mainAxis], crossSize);
+                itemCrossSizeList.Add(crossSize);
+
+                // 再计算主轴
                 var basicMainSize = flex.FlexBasis[mainAxis];
-                // 结合LayoutElement，基础宽度可变
-                var mainSize = basicMainSize >= 0 ? basicMainSize : (xIsMainAxis ? layout?.preferredWidth : layout?.preferredHeight) ?? 0;
+                // 结合LayoutElement，基础大小可变
+                var mainSize = basicMainSize >= 0 ? basicMainSize : LayoutUtility.GetPreferredSize(rect, mainAxis);
                 mainSize = GetActualSizeByAxis(index, mainAxis, mainSize);
-
                 itemMainSizeList.Add(mainSize);
+
                 if (flex.FlexGrow > 0)
                 {
                     growableItemIndexList.Add(index);
@@ -254,6 +313,21 @@ namespace Flexbox
             #endregion
 
             #region 计算item主轴尺寸
+
+            // 先设置容器宽高
+            if (m_AutoWidth || m_AutoHeight)
+            {
+                var autoMain = xIsMainAxis ? m_AutoWidth : m_AutoHeight;
+                var autoCross = xIsMainAxis ? m_AutoHeight : m_AutoWidth;
+
+                // 主轴平铺，交叉轴取最大尺寸
+                ContainerRect.sizeDelta = createVector2AccordingMainAxis(ContainerRect.rect.size[mainAxis] - (autoMain ? restSpace : 0), autoCross ? itemCrossSizeList.Max() : ContainerRect.rect.size[crossAxis]);
+
+                if (autoMain)
+                {
+                    restSpace = 0;
+                }
+            }
 
             // 扩展
             if (restSpace > 0)
@@ -371,7 +445,7 @@ namespace Flexbox
                 var basicCrossSize = item.flex.FlexBasis[crossAxis];
                 var crossSize = basicCrossSize >= 0 ? basicCrossSize : rect.rect.size[crossAxis];
 
-                rect.sizeDelta = createVector2AccordingMainAxis(itemMainSizeList[index], GetActualSizeByAxis(index, crossAxis, crossSize));
+                rect.sizeDelta = createVector2AccordingMainAxis(itemMainSizeList[index], itemCrossSizeList[index]);
             }
 
             #endregion
@@ -439,8 +513,9 @@ namespace Flexbox
                     rect.anchoredPosition = createVector2AccordingMainAxis(rect.anchoredPosition[mainAxis], -rect.rect.size[crossAxis] / 2 * mainPositionScale);
                 }
 
-                // 居中对齐
-                if (flex.AlignSelf == AlignSelf.Center || (flex.AlignSelf == AlignSelf.Auto && m_AlignItems == AlignItems.Center))
+                // 居中对齐，包括拉伸
+                if (flex.AlignSelf == AlignSelf.Center || (flex.AlignSelf == AlignSelf.Auto && m_AlignItems == AlignItems.Center)
+                    || flex.AlignSelf == AlignSelf.Stretch || (flex.AlignSelf == AlignSelf.Auto && m_AlignItems == AlignItems.Stretch))
                 {
                     rect.anchoredPosition = createVector2AccordingMainAxis(rect.anchoredPosition[mainAxis], -ContainerRect.rect.size[crossAxis] / 2 * mainPositionScale);
                 }
@@ -449,13 +524,6 @@ namespace Flexbox
                 if (flex.AlignSelf == AlignSelf.FlexEnd || (flex.AlignSelf == AlignSelf.Auto && m_AlignItems == AlignItems.FlexEnd))
                 {
                     rect.anchoredPosition = createVector2AccordingMainAxis(rect.anchoredPosition[mainAxis], ((rect.rect.size[crossAxis] / 2) - ContainerRect.rect.size[crossAxis]) * mainPositionScale);
-                }
-
-                // 拉伸
-                if (flex.AlignSelf == AlignSelf.Stretch || (flex.AlignSelf == AlignSelf.Auto && m_AlignItems == AlignItems.Stretch))
-                {
-                    rect.sizeDelta = createVector2AccordingMainAxis(rect.rect.size[mainAxis], GetActualSizeByAxis(index, crossAxis, ContainerRect.rect.size[crossAxis]));
-                    rect.anchoredPosition = createVector2AccordingMainAxis(rect.anchoredPosition[mainAxis], -ContainerRect.rect.size[crossAxis] / 2 * mainPositionScale);
                 }
             }
 
@@ -483,11 +551,14 @@ namespace Flexbox
         protected override void OnEnable()
         {
             base.OnEnable();
+            MarkDrivenSize();
             SetDirty();
         }
 
         protected override void OnDisable()
         {
+            m_Tracker.Clear();
+
             base.OnDisable();
             CanvasUpdateRegistry.UnRegisterCanvasElementForLayoutRebuild(this);
             m_isDirty = false;
@@ -496,12 +567,14 @@ namespace Flexbox
         protected override void OnDidApplyAnimationProperties()
         {
             base.OnDidApplyAnimationProperties();
+            MarkDrivenSize();
             SetDirty();
         }
 
         protected override void OnRectTransformDimensionsChange()
         {
             base.OnRectTransformDimensionsChange();
+            MarkDrivenSize();
             SetDirty();
         }
 
@@ -509,6 +582,7 @@ namespace Flexbox
         protected override void OnValidate()
         {
             base.OnValidate();
+            MarkDrivenSize();
             SetDirty();
         }
 #endif
@@ -534,6 +608,35 @@ namespace Flexbox
 
         public void GraphicUpdateComplete()
         {
+        }
+
+        public void CalculateLayoutInputHorizontal()
+        {
+        }
+
+        public void CalculateLayoutInputVertical()
+        {
+        }
+
+        private void MarkDrivenSize()
+        {
+            m_Tracker.Clear();
+
+            // 锁定Size
+            var prop = DrivenTransformProperties.None;
+            if (m_AutoWidth)
+            {
+                prop |= DrivenTransformProperties.SizeDeltaX;
+            }
+            if (m_AutoHeight)
+            {
+                prop |= DrivenTransformProperties.SizeDeltaY;
+            }
+
+            if (prop != DrivenTransformProperties.None)
+            {
+                m_Tracker.Add(this, transform as RectTransform, prop);
+            }
         }
     }
 }
